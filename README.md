@@ -14,7 +14,7 @@ A lightweight, self-hosted cloud storage service built with Go, PostgreSQL, and 
 
 ### Roadmap status
 
-The initial MVP feature list is implemented. The larger portfolio plan in `outputs/CLOUDLET_PORTFOY_PLANI.md` is not yet complete: the main remaining items are frontend/E2E tests, Swagger UI, ER diagram, screenshots/demo video, and production deployment validation. No single overall percentage is reported until those items are checked off with evidence.
+The initial MVP feature list is implemented. The larger portfolio plan in `outputs/CLOUDLET_PORTFOY_PLANI.md` is not yet complete: the main remaining items are the ER diagram, screenshots/demo video, and production deployment validation. No single overall percentage is reported until those items are checked off with evidence.
 
 ## Local development
 
@@ -29,6 +29,14 @@ The API will be available at `http://localhost:18080`. Check it with:
 
 ```bash
 curl http://localhost:18080/health
+```
+
+The Docker web interface serves the bundled, self-contained Swagger UI at `http://localhost:18081/docs/` and redirects `http://localhost:18081/docs` to that canonical URL. The OpenAPI contract is available at `http://localhost:18081/openapi.yaml`. Swagger "Try it out" requests use the same-origin `/api` proxy, include browser cookies, and copy the `XSRF-TOKEN` cookie into `X-CSRF-Token` for state-changing requests. The documentation is public, but it only exposes the API contract. Protected operations still require valid authentication and authorization.
+
+Validate the contract and its exact parity with the registered Go routes from `web/`:
+
+```bash
+npm run validate:openapi
 ```
 
 Register, then upload a file with the returned access token:

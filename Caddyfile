@@ -11,9 +11,20 @@
         Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: {$S3_PUBLIC_ENDPOINT}; connect-src 'self' {$S3_PUBLIC_ENDPOINT}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
     }
 
+    @docs_exact path /docs
+    redir @docs_exact /docs/ 308
+
+    @openapi path /openapi.yaml
+    header @openapi Content-Type "application/yaml; charset=utf-8"
+
     route {
         handle_path /api/* {
             reverse_proxy api:18080
+        }
+
+        handle /docs/* {
+            try_files {path} /docs/index.html
+            file_server
         }
 
         handle {

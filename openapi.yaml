@@ -1,274 +1,4460 @@
-openapi: 3.0.3
-info:
-  title: Cloudlet API
-  version: 0.1.0
-  description: Private, self-hosted cloud storage API.
-servers:
-  - url: http://localhost:18080
-tags:
-  - name: Auth
-  - name: Files
-  - name: Uploads
-  - name: Versions
-paths:
-  /health:
-    get:
-      tags: [Auth]
-      responses: { '200': { description: Healthy } }
-  /health/ready:
-    get:
-      tags: [Auth]
-      responses: { '200': { description: Ready }, '503': { description: Not ready } }
-  /metrics:
-    get:
-      responses: { '200': { description: Prometheus text exposition } }
-  /v1/auth/register:
-    post:
-      tags: [Auth]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Credentials' } } } }
-      responses: { '201': { description: Registered }, '409': { $ref: '#/components/responses/Conflict' } }
-  /v1/auth/login:
-    post:
-      tags: [Auth]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Credentials' } } } }
-      responses: { '200': { description: Authenticated }, '401': { $ref: '#/components/responses/Unauthorized' } }
-  /v1/auth/totp:
-    get:
-      tags: [Auth]
-      security: [{ bearerAuth: [] }]
-      responses: { '200': { description: TOTP status } }
-  /v1/auth/totp/setup:
-    post:
-      tags: [Auth]
-      security: [{ bearerAuth: [] }]
-      responses: { '200': { description: New secret and otpauth URI }, '429': { description: Rate limited } }
-  /v1/auth/totp/enable:
-    post:
-      tags: [Auth]
-      security: [{ bearerAuth: [] }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TOTPCode' } } } }
-      responses: { '200': { description: TOTP enabled }, '400': { description: Invalid code } }
-  /v1/auth/totp/disable:
-    post:
-      tags: [Auth]
-      security: [{ bearerAuth: [] }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TOTPCode' } } } }
-      responses: { '200': { description: TOTP disabled }, '400': { description: Invalid code } }
-  /v1/auth/refresh:
-    post:
-      tags: [Auth]
-      description: Rotates the HttpOnly refresh cookie and access cookie. Tokens are never exposed in the JSON response.
-      responses: { '204': { description: Session refreshed }, '401': { $ref: '#/components/responses/Unauthorized' } }
-  /v1/auth/email/verify:
-    post:
-      tags: [Auth]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [token]
-              properties: { token: { type: string } }
-      responses: { '200': { description: Email verified }, '400': { description: Invalid or expired single-use token }, '429': { description: Rate limited } }
-  /v1/auth/email/resend:
-    post:
-      tags: [Auth]
-      security: [{ bearerAuth: [] }]
-      responses: { '204': { description: Verification email sent }, '429': { description: Rate limited } }
-  /v1/auth/email/status:
-    get:
-      tags: [Auth]
-      security: [{ bearerAuth: [] }]
-      responses: { '200': { description: Current verification status } }
-  /v1/auth/password/forgot:
-    post:
-      tags: [Auth]
-      description: Always returns the same accepted response to avoid disclosing registered addresses.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [email]
-              properties: { email: { type: string, format: email } }
-      responses: { '202': { description: Request accepted }, '429': { description: Rate limited } }
-  /v1/auth/password/reset:
-    post:
-      tags: [Auth]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [token, password]
-              properties: { token: { type: string }, password: { type: string, minLength: 12, format: password } }
-      responses: { '204': { description: Password reset and sessions revoked }, '400': { description: Invalid, expired, or reused token }, '429': { description: Rate limited } }
-  /v1/auth/password/change:
-    post:
-      tags: [Auth]
-      security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [current_password, password]
-              properties: { current_password: { type: string, format: password }, password: { type: string, minLength: 12, format: password } }
-      responses: { '204': { description: Password changed and sessions revoked }, '400': { description: Weak password or invalid body }, '401': { description: Current password is incorrect }, '429': { description: Rate limited } }
-  /v1/auth/account:
-    delete:
-      tags: [Auth]
-      security: [{ bearerAuth: [] }]
-      description: Permanently deletes all object-storage data and then closes the account. Requires the current password.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [password]
-              properties: { password: { type: string, format: password } }
-      responses: { '204': { description: Account permanently closed }, '401': { description: Current password is incorrect }, '429': { description: Rate limited }, '503': { description: Storage cleanup failed; account was retained } }
-  /v1/files:
-    get:
-      tags: [Files]
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: folder_id, in: query, schema: { type: string, format: uuid } }
-        - { name: q, in: query, schema: { type: string } }
-      responses: { '200': { description: File list } }
-    post:
-      tags: [Files]
-      security: [{ bearerAuth: [] }]
-      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file], properties: { file: { type: string, format: binary }, folder_id: { type: string, format: uuid } } } } } }
-      responses: { '201': { description: File created }, '409': { $ref: '#/components/responses/Conflict' } }
-  /v1/files/{id}/download:
-    get:
-      tags: [Files]
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/FileID' }]
-      responses: { '200': { description: Presigned download URL } }
-  /v1/files/{id}/access:
-    post:
-      tags: [Sharing]
-      security: [{ bearerAuth: [] }]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string, format: email }, permission: { type: string, enum: [read, write] } } } } } }
-      responses: { '201': { description: Access granted }, '404': { description: File or recipient not found } }
-  /v1/shared-with-me:
-    get:
-      tags: [Sharing]
-      security: [{ bearerAuth: [] }]
-      responses: { '200': { description: Files shared with the authenticated user } }
-  /v1/shared-with-me/{id}/download:
-    get:
-      tags: [Sharing]
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/FileID' }]
-      responses: { '200': { description: Presigned download URL }, '404': { description: Shared file not found } }
-  /v1/file-access/{id}:
-    patch:
-      tags: [Sharing]
-      security: [{ bearerAuth: [] }]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [permission], properties: { permission: { type: string, enum: [read, write] } } } } } }
-      responses: { '204': { description: Permission updated }, '404': { description: Access grant not found } }
-    delete:
-      tags: [Sharing]
-      security: [{ bearerAuth: [] }]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
-      responses: { '204': { description: Access revoked }, '404': { description: Access grant not found } }
-  /v1/files/{id}/thumbnail:
-    get:
-      tags: [Files]
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/FileID' }]
-      responses: { '200': { description: Presigned thumbnail URL }, '404': { description: Thumbnail not ready } }
-  /v1/files/{id}/move:
-    post:
-      tags: [Files]
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/FileID' }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties: { folder_id: { type: string, format: uuid, nullable: true } }
-      responses: { '200': { description: File moved }, '404': { description: File or destination folder not found }, '409': { $ref: '#/components/responses/Conflict' } }
-  /v1/files/bulk/move:
-    post:
-      tags: [Files]
-      security: [{ bearerAuth: [] }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BulkFileMove' } } } }
-      responses: { '200': { description: Files moved atomically }, '400': { description: Invalid batch }, '404': { description: File or destination folder not found }, '409': { $ref: '#/components/responses/Conflict' } }
-  /v1/files/bulk/trash:
-    post:
-      tags: [Files]
-      security: [{ bearerAuth: [] }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BulkFileMove' } } } }
-      responses: { '204': { description: Files moved to trash atomically }, '400': { description: Invalid batch }, '404': { description: File not found } }
-  /v1/uploads:
-    post:
-      tags: [Uploads]
-      security: [{ bearerAuth: [] }]
-      responses: { '201': { description: Multipart upload intent } }
-  /v1/uploads/{id}/complete:
-    post:
-      tags: [Uploads]
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/UploadID' }]
-      responses: { '201': { description: Multipart upload completed } }
-  /v1/uploads/{id}:
-    get:
-      tags: [Uploads]
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/UploadID' }]
-      responses: { '200': { description: Multipart upload state and completed parts }, '404': { description: Upload not found }, '409': { description: Upload expired or no longer pending } }
-  /v1/files/{id}/versions:
-    get:
-      tags: [Versions]
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/FileID' }]
-      responses: { '200': { description: Version history } }
-    post:
-      tags: [Versions]
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/FileID' }]
-      responses: { '201': { description: New version created } }
-  /v1/files/{id}/versions/{version_id}:
-    delete:
-      tags: [Versions]
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - { $ref: '#/components/parameters/FileID' }
-        - { name: version_id, in: path, required: true, schema: { type: string, format: uuid } }
-      responses: { '204': { description: Version deleted }, '404': { description: Version not found }, '409': { description: Current version cannot be deleted } }
-components:
-  parameters:
-    FileID: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
-    UploadID: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
-  schemas:
-    Credentials:
-      type: object
-      required: [email, password]
-      properties: { email: { type: string, format: email }, password: { type: string, minLength: 12, format: password }, totp_code: { type: string, pattern: '^[0-9]{6}$' } }
-    TOTPCode:
-      type: object
-      required: [code]
-      properties: { code: { type: string, pattern: '^[0-9]{6}$' } }
-    BulkFileMove:
-      type: object
-      required: [ids]
-      properties:
-        ids: { type: array, minItems: 1, maxItems: 100, items: { type: string, format: uuid } }
-        folder_id: { type: string, format: uuid, nullable: true }
-  responses:
-    Unauthorized: { description: Authentication required }
-    Conflict: { description: Request conflicts with current state }
-  securitySchemes:
-    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Cloudlet API",
+    "version": "1.0.0",
+    "description": "Cloudlet self-hosted storage HTTP API. Error responses use the canonical `{error:{code,message}}` envelope. Cookie-authenticated unsafe methods require the CSRF header documented below; Bearer-authenticated requests do not."
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Same-origin Docker web API"
+    }
+  ],
+  "tags": [
+    {
+      "name": "System"
+    },
+    {
+      "name": "Auth"
+    },
+    {
+      "name": "Files"
+    },
+    {
+      "name": "Uploads"
+    },
+    {
+      "name": "Versions"
+    },
+    {
+      "name": "Folders"
+    },
+    {
+      "name": "Trash"
+    },
+    {
+      "name": "Storage"
+    },
+    {
+      "name": "Search"
+    },
+    {
+      "name": "Sharing"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "tags": [
+          "System"
+        ],
+        "summary": "Get health status",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/live": {
+      "get": {
+        "operationId": "getLiveness",
+        "tags": [
+          "System"
+        ],
+        "summary": "Get liveness status",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "getReadiness",
+        "tags": [
+          "System"
+        ],
+        "summary": "Get readiness status",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "getMetrics",
+        "tags": [
+          "System"
+        ],
+        "summary": "Get Prometheus metrics",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/register": {
+      "post": {
+        "operationId": "registerUser",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Register a user",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registered user and verification delivery status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "operationId": "loginUser",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Log in",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/email/verify": {
+      "post": {
+        "operationId": "verifyEmail",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Verify email address",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Email verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/email/resend": {
+      "post": {
+        "operationId": "resendVerificationEmail",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Resend verification email",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Email was already verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationStatus"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Verification email sent"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/email/status": {
+      "get": {
+        "operationId": "getEmailVerificationStatus",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get email verification status",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verification status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/password/forgot": {
+      "post": {
+        "operationId": "requestPasswordReset",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Request password reset",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Request accepted"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/password/reset": {
+      "post": {
+        "operationId": "resetPassword",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Reset password",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Password reset and sessions revoked"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/password/change": {
+      "post": {
+        "operationId": "changePassword",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Change password",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Password changed and sessions revoked"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/totp": {
+      "get": {
+        "operationId": "getTotpStatus",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get TOTP status",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "TOTP status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/totp/setup": {
+      "post": {
+        "operationId": "setupTotp",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Create TOTP setup",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "TOTP setup material",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpSetup"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/totp/enable": {
+      "post": {
+        "operationId": "enableTotp",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Enable TOTP",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpCode"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "TOTP enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/totp/disable": {
+      "post": {
+        "operationId": "disableTotp",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Disable TOTP",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpCode"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "TOTP disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/csrf": {
+      "get": {
+        "operationId": "issueCsrfToken",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Issue a CSRF token",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "CSRF token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsrfResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "operationId": "refreshSession",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Refresh session",
+        "security": [
+          {
+            "refreshCookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Session refreshed"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "operationId": "logoutSession",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Log out current session",
+        "security": [
+          {
+            "refreshCookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Session revoked"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/logout-all": {
+      "post": {
+        "operationId": "logoutAllSessions",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Log out all sessions",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "All sessions revoked"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/sessions": {
+      "get": {
+        "operationId": "listSessions",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "List active sessions",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/sessions/{id}": {
+      "delete": {
+        "operationId": "revokeSession",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Revoke a session",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SessionID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Session revoked"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/account": {
+      "delete": {
+        "operationId": "closeAccount",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Permanently close account",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Account closed"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files": {
+      "post": {
+        "operationId": "uploadFile",
+        "tags": [
+          "Files"
+        ],
+        "summary": "Upload a file",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "folder_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created file",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/File"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listFiles",
+        "tags": [
+          "Files"
+        ],
+        "summary": "List files",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "folder_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Restrict to one folder; omit for root"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "description": "Page size"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Zero-based offset"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "size",
+                "created_at"
+              ],
+              "default": "created_at"
+            },
+            "description": "Sort field"
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            },
+            "description": "Sort direction"
+          },
+          {
+            "name": "content_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact content type filter"
+          },
+          {
+            "name": "min_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Minimum size in bytes"
+          },
+          {
+            "name": "max_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Maximum size in bytes"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated file list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/uploads": {
+      "post": {
+        "operationId": "startMultipartUpload",
+        "tags": [
+          "Uploads"
+        ],
+        "summary": "Start multipart upload",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MultipartStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Multipart upload intent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultipartStarted"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/uploads/{id}/complete": {
+      "post": {
+        "operationId": "completeMultipartUpload",
+        "tags": [
+          "Uploads"
+        ],
+        "summary": "Complete multipart upload",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UploadID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MultipartCompleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created file",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/File"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/uploads/{id}": {
+      "get": {
+        "operationId": "resumeMultipartUpload",
+        "tags": [
+          "Uploads"
+        ],
+        "summary": "Get resumable multipart upload",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UploadID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Multipart upload state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultipartStarted"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "cancelMultipartUpload",
+        "tags": [
+          "Uploads"
+        ],
+        "summary": "Cancel multipart upload",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UploadID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Multipart upload cancelled"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files/{id}/versions": {
+      "post": {
+        "operationId": "uploadFileVersion",
+        "tags": [
+          "Versions"
+        ],
+        "summary": "Upload a new file version",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Version"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listFileVersions",
+        "tags": [
+          "Versions"
+        ],
+        "summary": "List file versions",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Version history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files/{id}/versions/{version_id}/download": {
+      "get": {
+        "operationId": "downloadFileVersion",
+        "tags": [
+          "Versions"
+        ],
+        "summary": "Create version download URL",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          },
+          {
+            "$ref": "#/components/parameters/VersionID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Presigned download URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Download"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files/{id}/versions/{version_id}/restore": {
+      "post": {
+        "operationId": "restoreFileVersion",
+        "tags": [
+          "Versions"
+        ],
+        "summary": "Restore a file version",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          },
+          {
+            "$ref": "#/components/parameters/VersionID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Restored current version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Version"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files/{id}/versions/{version_id}": {
+      "delete": {
+        "operationId": "deleteFileVersion",
+        "tags": [
+          "Versions"
+        ],
+        "summary": "Delete a file version",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          },
+          {
+            "$ref": "#/components/parameters/VersionID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Version deleted"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files/{id}": {
+      "get": {
+        "operationId": "getFile",
+        "tags": [
+          "Files"
+        ],
+        "summary": "Get file metadata",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/File"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "renameFile",
+        "tags": [
+          "Files"
+        ],
+        "summary": "Rename a file",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Renamed file",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/File"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "trashFile",
+        "tags": [
+          "Files"
+        ],
+        "summary": "Move a file to trash",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "File moved to trash"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files/{id}/download": {
+      "get": {
+        "operationId": "downloadFile",
+        "tags": [
+          "Files"
+        ],
+        "summary": "Create file download URL",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Presigned download URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Download"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files/{id}/thumbnail": {
+      "get": {
+        "operationId": "getFileThumbnail",
+        "tags": [
+          "Files"
+        ],
+        "summary": "Create thumbnail URL",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Presigned thumbnail URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Download"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files/{id}/move": {
+      "post": {
+        "operationId": "moveFile",
+        "tags": [
+          "Files"
+        ],
+        "summary": "Move a file",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveFileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Moved file",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/File"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files/bulk/move": {
+      "post": {
+        "operationId": "bulkMoveFiles",
+        "tags": [
+          "Files"
+        ],
+        "summary": "Move files atomically",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkMoveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Moved files",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files/bulk/trash": {
+      "post": {
+        "operationId": "bulkTrashFiles",
+        "tags": [
+          "Files"
+        ],
+        "summary": "Move files to trash atomically",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkTrashRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Files moved to trash"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/trash": {
+      "get": {
+        "operationId": "listFileTrash",
+        "tags": [
+          "Trash"
+        ],
+        "summary": "List trashed files",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "description": "Page size"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Zero-based offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated trash",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashFileList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/trash/{id}/restore": {
+      "post": {
+        "operationId": "restoreTrashedFile",
+        "tags": [
+          "Trash"
+        ],
+        "summary": "Restore a trashed file",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Restored file",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/File"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/trash/{id}": {
+      "delete": {
+        "operationId": "deleteTrashedFilePermanently",
+        "tags": [
+          "Trash"
+        ],
+        "summary": "Permanently delete a trashed file",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "File permanently deleted"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/folders": {
+      "post": {
+        "operationId": "createFolder",
+        "tags": [
+          "Folders"
+        ],
+        "summary": "Create a folder",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFolderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Folder"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listFolders",
+        "tags": [
+          "Folders"
+        ],
+        "summary": "List folders",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "parent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Restrict to one parent; omit for root"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Folder list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/folders/{id}": {
+      "patch": {
+        "operationId": "renameFolder",
+        "tags": [
+          "Folders"
+        ],
+        "summary": "Rename a folder",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FolderID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Renamed folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Folder"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "trashFolder",
+        "tags": [
+          "Folders"
+        ],
+        "summary": "Move a folder to trash",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FolderID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Folder moved to trash"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/folders/{id}/move": {
+      "post": {
+        "operationId": "moveFolder",
+        "tags": [
+          "Folders"
+        ],
+        "summary": "Move a folder",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FolderID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveFolderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Moved folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Folder"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/trash/folders": {
+      "get": {
+        "operationId": "listFolderTrash",
+        "tags": [
+          "Trash"
+        ],
+        "summary": "List trashed folders",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "description": "Page size"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Zero-based offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated folder trash",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashFolderList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/trash/folders/{id}/restore": {
+      "post": {
+        "operationId": "restoreTrashedFolder",
+        "tags": [
+          "Trash"
+        ],
+        "summary": "Restore a trashed folder",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FolderID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Restored folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Folder"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/trash/folders/{id}": {
+      "delete": {
+        "operationId": "deleteTrashedFolderPermanently",
+        "tags": [
+          "Trash"
+        ],
+        "summary": "Permanently delete a trashed folder",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FolderID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Folder permanently deleted"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/storage": {
+      "get": {
+        "operationId": "getStorageUsage",
+        "tags": [
+          "Storage"
+        ],
+        "summary": "Get storage usage",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Storage usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageUsage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/search": {
+      "get": {
+        "operationId": "searchStorage",
+        "tags": [
+          "Search"
+        ],
+        "summary": "Search files and folders",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Search text"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "description": "Maximum results per resource type"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files/{id}/shares": {
+      "post": {
+        "operationId": "createPublicShare",
+        "tags": [
+          "Sharing"
+        ],
+        "summary": "Create a public share",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShareRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created public share",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedShare"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listPublicShares",
+        "tags": [
+          "Sharing"
+        ],
+        "summary": "List public shares for a file",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public shares",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/files/{id}/access": {
+      "post": {
+        "operationId": "grantFileAccess",
+        "tags": [
+          "Sharing"
+        ],
+        "summary": "Grant a user file access",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantAccessRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created access grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessGrant"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listFileAccess",
+        "tags": [
+          "Sharing"
+        ],
+        "summary": "List access grants for a file",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Access grants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/file-access/{id}": {
+      "patch": {
+        "operationId": "updateFileAccess",
+        "tags": [
+          "Sharing"
+        ],
+        "summary": "Update an access grant",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AccessID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermissionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Permission updated"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "revokeFileAccess",
+        "tags": [
+          "Sharing"
+        ],
+        "summary": "Revoke an access grant",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AccessID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Access revoked"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/shared-with-me": {
+      "get": {
+        "operationId": "listSharedWithMe",
+        "tags": [
+          "Sharing"
+        ],
+        "summary": "List files shared with the current user",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shared files",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedWithMeList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/shared-with-me/{id}/download": {
+      "get": {
+        "operationId": "downloadSharedFile",
+        "tags": [
+          "Sharing"
+        ],
+        "summary": "Create download URL for a shared file",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FileID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Presigned download URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Download"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/shares/{id}": {
+      "delete": {
+        "operationId": "revokePublicShare",
+        "tags": [
+          "Sharing"
+        ],
+        "summary": "Revoke a public share",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ShareID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Share revoked"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/public/shares/{token}/download": {
+      "post": {
+        "operationId": "downloadPublicShare",
+        "tags": [
+          "Sharing"
+        ],
+        "summary": "Create download URL from a public share",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque public share token"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharePasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Presigned download URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Download"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "cloudlet_access",
+        "description": "HttpOnly access-token cookie issued by register, login, or refresh."
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Access JWT supplied in the Authorization header."
+      },
+      "refreshCookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "cloudlet_refresh",
+        "description": "HttpOnly refresh-session cookie used only by refresh and logout."
+      }
+    },
+    "parameters": {
+      "CSRFToken": {
+        "name": "X-CSRF-Token",
+        "in": "header",
+        "required": true,
+        "description": "Required when this unsafe operation is authenticated with a cookie. The value must exactly match the readable XSRF-TOKEN cookie. It is not required when bearerAuth is used.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "FileID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "FolderID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "UploadID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "SessionID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "AccessID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "ShareID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "VersionID": {
+        "name": "version_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "Status": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Credentials": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 12
+          },
+          "totp_code": {
+            "type": "string",
+            "description": "Current authenticator code when TOTP is enabled"
+          }
+        }
+      },
+      "UserResponse": {
+        "type": "object",
+        "required": [
+          "user"
+        ],
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        }
+      },
+      "RegistrationResponse": {
+        "type": "object",
+        "required": [
+          "user",
+          "verification_email_sent"
+        ],
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "verification_email_sent": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TokenRequest": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Single-use verification token"
+          }
+        }
+      },
+      "ForgotPasswordRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        }
+      },
+      "ResetPasswordRequest": {
+        "type": "object",
+        "required": [
+          "token",
+          "password"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Single-use password reset token"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 12
+          }
+        }
+      },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "required": [
+          "current_password",
+          "password"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "format": "password"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 12
+          }
+        }
+      },
+      "PasswordRequest": {
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        }
+      },
+      "VerificationStatus": {
+        "type": "object",
+        "required": [
+          "verified"
+        ],
+        "properties": {
+          "verified": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TotpStatus": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TotpSetup": {
+        "type": "object",
+        "required": [
+          "secret",
+          "otpauth_uri"
+        ],
+        "properties": {
+          "secret": {
+            "type": "string",
+            "writeOnly": true,
+            "description": "New authenticator secret; returned only during setup"
+          },
+          "otpauth_uri": {
+            "type": "string",
+            "writeOnly": true
+          }
+        }
+      },
+      "TotpCode": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "CsrfResponse": {
+        "type": "object",
+        "required": [
+          "csrf_token"
+        ],
+        "properties": {
+          "csrf_token": {
+            "type": "string",
+            "description": "Copy this value to X-CSRF-Token for cookie-authenticated unsafe requests"
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_used_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SessionList": {
+        "type": "object",
+        "required": [
+          "sessions"
+        ],
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            }
+          }
+        }
+      },
+      "File": {
+        "type": "object",
+        "required": [
+          "id",
+          "folder_id",
+          "name",
+          "content_type",
+          "size_bytes",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "folder_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checksum_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "TrashedFile": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/File"
+          },
+          {
+            "type": "object",
+            "required": [
+              "deleted_at"
+            ],
+            "properties": {
+              "deleted_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
+      },
+      "Folder": {
+        "type": "object",
+        "required": [
+          "id",
+          "parent_id",
+          "name",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TrashedFolder": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Folder"
+          },
+          {
+            "type": "object",
+            "required": [
+              "deleted_at"
+            ],
+            "properties": {
+              "deleted_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
+      },
+      "Download": {
+        "type": "object",
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "StorageUsage": {
+        "type": "object",
+        "required": [
+          "used_bytes",
+          "reserved_bytes",
+          "quota_bytes",
+          "available_bytes"
+        ],
+        "properties": {
+          "used_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reserved_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quota_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "available_bytes": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "RenameRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        }
+      },
+      "MoveFileRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "BulkMoveRequest": {
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "folder_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "BulkTrashRequest": {
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "CreateFolderRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "MoveFolderRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "parent_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "FileList": {
+        "type": "object",
+        "required": [
+          "files",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/File"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "TrashFileList": {
+        "type": "object",
+        "required": [
+          "files",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrashedFile"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "FolderList": {
+        "type": "object",
+        "required": [
+          "folders",
+          "parent_id"
+        ],
+        "properties": {
+          "folders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Folder"
+            }
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "TrashFolderList": {
+        "type": "object",
+        "required": [
+          "folders",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "folders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrashedFolder"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "FilesResponse": {
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/File"
+            }
+          }
+        }
+      },
+      "SearchResults": {
+        "type": "object",
+        "required": [
+          "query",
+          "files",
+          "folders"
+        ],
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/File"
+            }
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Folder"
+            }
+          }
+        }
+      },
+      "MultipartStartRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "content_type",
+          "checksum_sha256",
+          "idempotency_key",
+          "size_bytes"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "checksum_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "folder_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      },
+      "CompletedPart": {
+        "type": "object",
+        "required": [
+          "part_number",
+          "etag"
+        ],
+        "properties": {
+          "part_number": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1
+          },
+          "etag": {
+            "type": "string"
+          }
+        }
+      },
+      "PartURL": {
+        "type": "object",
+        "required": [
+          "part_number",
+          "url"
+        ],
+        "properties": {
+          "part_number": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "MultipartStarted": {
+        "type": "object",
+        "required": [
+          "intent_id",
+          "file_id",
+          "part_size",
+          "expires_at",
+          "parts"
+        ],
+        "properties": {
+          "intent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "file_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "part_size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PartURL"
+            }
+          },
+          "completed_parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompletedPart"
+            }
+          }
+        }
+      },
+      "MultipartCompleteRequest": {
+        "type": "object",
+        "required": [
+          "parts"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "parts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/CompletedPart"
+            }
+          }
+        }
+      },
+      "Version": {
+        "type": "object",
+        "required": [
+          "id",
+          "file_id",
+          "content_type",
+          "size_bytes",
+          "checksum_sha256",
+          "created_at",
+          "is_current"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "file_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "checksum_sha256": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "is_current": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VersionList": {
+        "type": "object",
+        "required": [
+          "versions"
+        ],
+        "properties": {
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Version"
+            }
+          }
+        }
+      },
+      "Share": {
+        "type": "object",
+        "required": [
+          "id",
+          "file_id",
+          "expires_at",
+          "max_access_starts",
+          "access_start_count",
+          "password_protected",
+          "revoked_at",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "file_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "max_access_starts": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "access_start_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "password_protected": {
+            "type": "boolean"
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CreatedShare": {
+        "type": "object",
+        "required": [
+          "share",
+          "url"
+        ],
+        "properties": {
+          "share": {
+            "$ref": "#/components/schemas/Share"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "CreateShareRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "type": "string",
+            "format": "password"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "max_access_starts": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
+      "ShareList": {
+        "type": "object",
+        "required": [
+          "shares"
+        ],
+        "properties": {
+          "shares": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Share"
+            }
+          }
+        }
+      },
+      "SharePasswordRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        }
+      },
+      "AccessGrant": {
+        "type": "object",
+        "required": [
+          "id",
+          "file_id",
+          "file_name",
+          "owner_email",
+          "permission",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "file_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "owner_email": {
+            "type": "string",
+            "format": "email"
+          },
+          "grantee_email": {
+            "type": "string",
+            "format": "email"
+          },
+          "permission": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "GrantAccessRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "permission": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write"
+            ],
+            "default": "read"
+          }
+        }
+      },
+      "PermissionRequest": {
+        "type": "object",
+        "required": [
+          "permission"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "permission": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write"
+            ]
+          }
+        }
+      },
+      "AccessList": {
+        "type": "object",
+        "required": [
+          "access"
+        ],
+        "properties": {
+          "access": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccessGrant"
+            }
+          }
+        }
+      },
+      "SharedWithMeList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccessGrant"
+            }
+          }
+        }
+      }
+    }
+  }
+}

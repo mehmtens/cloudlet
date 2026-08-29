@@ -3,6 +3,7 @@ WORKDIR /app
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
+COPY openapi.yaml /openapi.yaml
 RUN npm run build
 
 FROM caddy:2.10-alpine
