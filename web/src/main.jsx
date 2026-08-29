@@ -17,7 +17,7 @@ async function api(path, options = {}) {
 }
 const formatBytes = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(2)} GB`;
 
-function App() {
+export function App() {
   const [files, setFiles] = useState([]), [folders, setFolders] = useState([]), [folder, setFolder] = useState(null), [folderPath, setFolderPath] = useState([]);
   const [usage, setUsage] = useState({used_bytes: 0, quota_bytes: 1}), [signedIn, setSignedIn] = useState(true);
   const [error, setError] = useState(''), [query, setQuery] = useState(''), [sort, setSort] = useState('created_at'), [view, setView] = useState('grid');
@@ -78,7 +78,7 @@ function App() {
   </div>;
 }
 
-function Login({onSuccess, error, setError}) {
+export function Login({onSuccess, error, setError}) {
   const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [totpCode, setTotpCode] = useState(''), [totpRequired, setTotpRequired] = useState(false), [busy, setBusy] = useState(false);
   const [mode, setMode] = useState('login');
   const [notice, setNotice] = useState('');
@@ -100,7 +100,7 @@ function ChangePasswordDialog({onClose, onDone}) {
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="password-title"><button className="modal-close" onClick={onClose}><X size={18}/></button><div className="eyebrow">HESAP GÜVENLİĞİ</div><h2 id="password-title">Parolanı değiştir</h2><form onSubmit={submit}><label>Mevcut parola<input type="password" autoComplete="current-password" required value={currentPassword} onChange={e => setCurrentPassword(e.target.value)}/></label><label>Yeni parola<input type="password" autoComplete="new-password" minLength={12} required value={password} onChange={e => setPassword(e.target.value)}/></label><label>Yeni parola tekrar<input type="password" autoComplete="new-password" minLength={12} required value={confirmation} onChange={e => setConfirmation(e.target.value)}/></label><small className="password-hint">En az 12 karakter kullan. Değişiklikten sonra tüm oturumlar kapatılır.</small>{error && <div className="error">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Değiştiriliyor…' : 'Parolayı değiştir'}</button></form></section></div>;
 }
 
-function CloseAccountDialog({onClose, onDone}) {
+export function CloseAccountDialog({onClose, onDone}) {
   const [password, setPassword] = useState(''), [confirmation, setConfirmation] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const submit = async e => { e.preventDefault(); if (confirmation !== 'HESABIMI SİL') { setError('Onay metnini aynen yazmalısın.'); return; } setBusy(true); setError(''); try { await api('/v1/auth/account', {method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password})}); onDone(); } catch (requestError) { setError(requestError.message); setBusy(false); } };
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="account-close-title"><button className="modal-close" onClick={onClose}><X size={18}/></button><div className="eyebrow">GERİ ALINAMAZ İŞLEM</div><h2 id="account-close-title">Hesabını kapat</h2><p>Tüm dosyaların, sürümlerin, paylaşımların ve oturumların kalıcı olarak silinir.</p><form onSubmit={submit}><label>Mevcut parola<input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}/></label><label>Onaylamak için HESABIMI SİL yaz<input required value={confirmation} onChange={e => setConfirmation(e.target.value)}/></label>{error && <div className="error">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Hesap kapatılıyor…' : 'Hesabı kalıcı olarak kapat'}</button></form></section></div>;
@@ -124,7 +124,7 @@ function SessionsDialog({onClose, onLogout}) {
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="sessions-title"><button className="modal-close" onClick={onClose}><X size={18}/></button><div className="eyebrow">HESAP GÜVENLİĞİ</div><h2 id="sessions-title">Aktif oturumlar</h2><p>Tanımadığın bir oturumu tek tıkla kapatabilirsin.</p><div className="version-list">{sessions.map(item => <div className="version-row" key={item.id}><div><strong>{new Date(item.created_at).toLocaleString('tr-TR')}</strong><span>Son kullanım: {item.last_used_at ? new Date(item.last_used_at).toLocaleString('tr-TR') : 'henüz kullanılmadı'}</span></div><button onClick={() => revoke(item.id)} title="Oturumu kapat"><X size={15}/></button></div>)}{!sessions.length && !error && <p>Aktif oturum bulunmuyor.</p>}</div>{error && <div className="error">{error}</div>}<button className="secondary" onClick={revokeAll}>Tüm oturumları kapat</button></section></div>;
 }
 
-function NewFolderDialog({onClose, onCreate}) {
+export function NewFolderDialog({onClose, onCreate}) {
   const [name, setName] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const submit = async event => { event.preventDefault(); if (!name.trim()) { setError('Klasör adı boş olamaz.'); return; } setBusy(true); setError(''); try { await onCreate(name); } catch (e) { setError(e.message); setBusy(false); } };
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="new-folder-title"><button className="modal-close" onClick={onClose}><X size={18}/></button><div className="eyebrow">KLASÖR OLUŞTUR</div><h2 id="new-folder-title">Yeni klasör</h2><form onSubmit={submit}><label>Klasör adı<input autoFocus required maxLength={255} value={name} onChange={e => setName(e.target.value)} placeholder="Örn. Projeler"/></label>{error && <div className="error">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Oluşturuluyor…' : 'Klasör oluştur'}</button></form></section></div>;
@@ -167,4 +167,5 @@ function MoveDialog({file, files, onClose, onMoved}) {
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="move-title"><button className="modal-close" onClick={onClose}><X size={18}/></button><div className="eyebrow">DOSYAYI TAŞI</div><h2 id="move-title">{items.length === 1 ? items[0].name : `${items.length} dosyayı taşı`}</h2><form onSubmit={move}><label>Hedef klasör<select value={folderID} onChange={e => setFolderID(e.target.value)}><option value="">Kök dizin</option>{folders.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{error && <div className="error">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Taşınıyor…' : 'Taşı'}</button></form></section></div>;
 }
 
-createRoot(document.getElementById('root')).render(<App/>);
+const rootElement = document.getElementById('root');
+if (rootElement) createRoot(rootElement).render(<App/>);

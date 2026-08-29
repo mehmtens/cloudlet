@@ -6,7 +6,7 @@ export default defineConfig({
   expect: {timeout: 15_000},
   fullyParallel: false,
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? 'github' : 'list',
+  reporter: process.env.CI ? [['github'], ['html', {open: 'never'}]] : 'list',
   use: {
     baseURL: process.env.CLOUDLET_E2E_BASE_URL || 'http://localhost:18081',
     trace: 'retain-on-failure',

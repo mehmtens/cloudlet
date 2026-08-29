@@ -51,4 +51,73 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - run: npm ci
+      - run: npm run test:unit
       - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    env:
+      COMPOSE_PROJECT_NAME: cloudlet-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+      CLOUDLET_E2E_BASE_URL: http://localhost:28081
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
+      - name: Prepare isolated Compose environment
+        run: |
+          cp .env.docker.example .env.ci
+          sed -i \
+            -e 's/^API_PORT=.*/API_PORT=28080/' \
+            -e 's/^WEB_PORT=.*/WEB_PORT=28081/' \
+            -e 's/^POSTGRES_PORT=.*/POSTGRES_PORT=25432/' \
+            -e 's/^MINIO_API_PORT=.*/MINIO_API_PORT=29000/' \
+            -e 's/^MINIO_CONSOLE_PORT=.*/MINIO_CONSOLE_PORT=29001/' \
+            -e 's|^PUBLIC_BASE_URL=.*|PUBLIC_BASE_URL=http://localhost:28081|' \
+            -e 's|^S3_PUBLIC_ENDPOINT=.*|S3_PUBLIC_ENDPOINT=http://localhost:29000|' \
+            -e 's|^S3_CORS_ORIGIN=.*|S3_CORS_ORIGIN=http://localhost:28081|' \
+            .env.ci
+          echo 'API_ENV_FILE=.env.ci' >> .env.ci
+      - name: Start Cloudlet Docker Compose stack
+        run: docker compose --env-file .env.ci --profile dev up -d --build api web postgres minio clamav
+      - name: Wait for healthy API and web
+        run: |
+          for attempt in {1..60}; do
+            api_status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://localhost:28080/health/live || true)
+            web_status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://localhost:28081/ || true)
+            unhealthy=$(docker compose --env-file .env.ci --profile dev ps --format json | jq -s '[.[] | select(.Health? != null and .Health != "" and .Health != "healthy")] | length')
+            if [ "$api_status" = "200" ] && [ "$web_status" = "200" ] && [ "$unhealthy" = "0" ]; then
+              docker compose --env-file .env.ci --profile dev ps
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose --env-file .env.ci --profile dev ps
+          docker compose --env-file .env.ci --profile dev logs --no-color
+          exit 1
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+      - name: Install Chromium and system dependencies
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright E2E
+        working-directory: web
+        run: npm run test:e2e
+      - name: Collect Docker logs after failure
+        if: failure()
+        run: docker compose --env-file .env.ci --profile dev logs --no-color > cloudlet-docker.log 2>&1
+      - name: Upload Playwright report and Docker logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudlet-e2e-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            web/playwright-report/
+            web/test-results/
+            cloudlet-docker.log
+      - name: Cleanup Compose stack
+        if: always()
+        run: docker compose --env-file .env.ci --profile dev down -v --remove-orphans
