@@ -85,9 +85,9 @@ describe('critical Cloudlet frontend behavior', () => {
     expect(onDone).toHaveBeenCalledOnce();
   });
 
-  it('shows an API error message returned during registration', async () => {
+  it('shows the canonical nested API error message returned during registration', async () => {
     const user = userEvent.setup();
-    fetch.mockResolvedValue(jsonResponse({message: 'Bu e-posta adresi zaten kayıtlı.'}, 409));
+    fetch.mockResolvedValue(jsonResponse({error: {code: 'email_conflict', message: 'Bu e-posta adresi zaten kayıtlı.'}}, 409));
     render(<LoginHarness/>);
 
     await user.click(screen.getByRole('button', {name: /Hesabın yok mu/}));

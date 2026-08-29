@@ -12,7 +12,7 @@ async function api(path, options = {}) {
     const token = csrf(); if (token) headers.set('X-CSRF-Token', decodeURIComponent(token));
   }
   const response = await fetch(API + path, {credentials: 'include', ...options, headers});
-  if (!response.ok) { const body = await response.json().catch(() => ({})); const error = new Error(body.message || `İstek başarısız (${response.status})`); error.status = response.status; error.code = body.code; throw error; }
+  if (!response.ok) { const body = await response.json().catch(() => ({})); const details = body.error || body; const error = new Error(details.message || `İstek başarısız (${response.status})`); error.status = response.status; error.code = details.code; throw error; }
   return response.status === 204 ? null : response.json();
 }
 const formatBytes = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(2)} GB`;
