@@ -1,0 +1,274 @@
+openapi: 3.0.3
+info:
+  title: Cloudlet API
+  version: 0.1.0
+  description: Private, self-hosted cloud storage API.
+servers:
+  - url: http://localhost:18080
+tags:
+  - name: Auth
+  - name: Files
+  - name: Uploads
+  - name: Versions
+paths:
+  /health:
+    get:
+      tags: [Auth]
+      responses: { '200': { description: Healthy } }
+  /health/ready:
+    get:
+      tags: [Auth]
+      responses: { '200': { description: Ready }, '503': { description: Not ready } }
+  /metrics:
+    get:
+      responses: { '200': { description: Prometheus text exposition } }
+  /v1/auth/register:
+    post:
+      tags: [Auth]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Credentials' } } } }
+      responses: { '201': { description: Registered }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Credentials' } } } }
+      responses: { '200': { description: Authenticated }, '401': { $ref: '#/components/responses/Unauthorized' } }
+  /v1/auth/totp:
+    get:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: TOTP status } }
+  /v1/auth/totp/setup:
+    post:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: New secret and otpauth URI }, '429': { description: Rate limited } }
+  /v1/auth/totp/enable:
+    post:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TOTPCode' } } } }
+      responses: { '200': { description: TOTP enabled }, '400': { description: Invalid code } }
+  /v1/auth/totp/disable:
+    post:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TOTPCode' } } } }
+      responses: { '200': { description: TOTP disabled }, '400': { description: Invalid code } }
+  /v1/auth/refresh:
+    post:
+      tags: [Auth]
+      description: Rotates the HttpOnly refresh cookie and access cookie. Tokens are never exposed in the JSON response.
+      responses: { '204': { description: Session refreshed }, '401': { $ref: '#/components/responses/Unauthorized' } }
+  /v1/auth/email/verify:
+    post:
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties: { token: { type: string } }
+      responses: { '200': { description: Email verified }, '400': { description: Invalid or expired single-use token }, '429': { description: Rate limited } }
+  /v1/auth/email/resend:
+    post:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      responses: { '204': { description: Verification email sent }, '429': { description: Rate limited } }
+  /v1/auth/email/status:
+    get:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Current verification status } }
+  /v1/auth/password/forgot:
+    post:
+      tags: [Auth]
+      description: Always returns the same accepted response to avoid disclosing registered addresses.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties: { email: { type: string, format: email } }
+      responses: { '202': { description: Request accepted }, '429': { description: Rate limited } }
+  /v1/auth/password/reset:
+    post:
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties: { token: { type: string }, password: { type: string, minLength: 12, format: password } }
+      responses: { '204': { description: Password reset and sessions revoked }, '400': { description: Invalid, expired, or reused token }, '429': { description: Rate limited } }
+  /v1/auth/password/change:
+    post:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, password]
+              properties: { current_password: { type: string, format: password }, password: { type: string, minLength: 12, format: password } }
+      responses: { '204': { description: Password changed and sessions revoked }, '400': { description: Weak password or invalid body }, '401': { description: Current password is incorrect }, '429': { description: Rate limited } }
+  /v1/auth/account:
+    delete:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      description: Permanently deletes all object-storage data and then closes the account. Requires the current password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties: { password: { type: string, format: password } }
+      responses: { '204': { description: Account permanently closed }, '401': { description: Current password is incorrect }, '429': { description: Rate limited }, '503': { description: Storage cleanup failed; account was retained } }
+  /v1/files:
+    get:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: folder_id, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string } }
+      responses: { '200': { description: File list } }
+    post:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file], properties: { file: { type: string, format: binary }, folder_id: { type: string, format: uuid } } } } } }
+      responses: { '201': { description: File created }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/files/{id}/download:
+    get:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/FileID' }]
+      responses: { '200': { description: Presigned download URL } }
+  /v1/files/{id}/access:
+    post:
+      tags: [Sharing]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string, format: email }, permission: { type: string, enum: [read, write] } } } } } }
+      responses: { '201': { description: Access granted }, '404': { description: File or recipient not found } }
+  /v1/shared-with-me:
+    get:
+      tags: [Sharing]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Files shared with the authenticated user } }
+  /v1/shared-with-me/{id}/download:
+    get:
+      tags: [Sharing]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/FileID' }]
+      responses: { '200': { description: Presigned download URL }, '404': { description: Shared file not found } }
+  /v1/file-access/{id}:
+    patch:
+      tags: [Sharing]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [permission], properties: { permission: { type: string, enum: [read, write] } } } } } }
+      responses: { '204': { description: Permission updated }, '404': { description: Access grant not found } }
+    delete:
+      tags: [Sharing]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '204': { description: Access revoked }, '404': { description: Access grant not found } }
+  /v1/files/{id}/thumbnail:
+    get:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/FileID' }]
+      responses: { '200': { description: Presigned thumbnail URL }, '404': { description: Thumbnail not ready } }
+  /v1/files/{id}/move:
+    post:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/FileID' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { folder_id: { type: string, format: uuid, nullable: true } }
+      responses: { '200': { description: File moved }, '404': { description: File or destination folder not found }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/files/bulk/move:
+    post:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BulkFileMove' } } } }
+      responses: { '200': { description: Files moved atomically }, '400': { description: Invalid batch }, '404': { description: File or destination folder not found }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/files/bulk/trash:
+    post:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BulkFileMove' } } } }
+      responses: { '204': { description: Files moved to trash atomically }, '400': { description: Invalid batch }, '404': { description: File not found } }
+  /v1/uploads:
+    post:
+      tags: [Uploads]
+      security: [{ bearerAuth: [] }]
+      responses: { '201': { description: Multipart upload intent } }
+  /v1/uploads/{id}/complete:
+    post:
+      tags: [Uploads]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/UploadID' }]
+      responses: { '201': { description: Multipart upload completed } }
+  /v1/uploads/{id}:
+    get:
+      tags: [Uploads]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/UploadID' }]
+      responses: { '200': { description: Multipart upload state and completed parts }, '404': { description: Upload not found }, '409': { description: Upload expired or no longer pending } }
+  /v1/files/{id}/versions:
+    get:
+      tags: [Versions]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/FileID' }]
+      responses: { '200': { description: Version history } }
+    post:
+      tags: [Versions]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/FileID' }]
+      responses: { '201': { description: New version created } }
+  /v1/files/{id}/versions/{version_id}:
+    delete:
+      tags: [Versions]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/FileID' }
+        - { name: version_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses: { '204': { description: Version deleted }, '404': { description: Version not found }, '409': { description: Current version cannot be deleted } }
+components:
+  parameters:
+    FileID: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    UploadID: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+  schemas:
+    Credentials:
+      type: object
+      required: [email, password]
+      properties: { email: { type: string, format: email }, password: { type: string, minLength: 12, format: password }, totp_code: { type: string, pattern: '^[0-9]{6}$' } }
+    TOTPCode:
+      type: object
+      required: [code]
+      properties: { code: { type: string, pattern: '^[0-9]{6}$' } }
+    BulkFileMove:
+      type: object
+      required: [ids]
+      properties:
+        ids: { type: array, minItems: 1, maxItems: 100, items: { type: string, format: uuid } }
+        folder_id: { type: string, format: uuid, nullable: true }
+  responses:
+    Unauthorized: { description: Authentication required }
+    Conflict: { description: Request conflicts with current state }
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }

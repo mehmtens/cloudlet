@@ -1,0 +1,11 @@
+{
+  "title": "Cloudlet Overview",
+  "schemaVersion": 39,
+  "panels": [
+    {"type":"stat","title":"HTTP requests","gridPos":{"x":0,"y":0,"w":8,"h":4},"targets":[{"expr":"cloudlet_http_requests_total"}]},
+    {"type":"stat","title":"5xx errors","gridPos":{"x":8,"y":0,"w":8,"h":4},"targets":[{"expr":"cloudlet_http_errors_total"}]},
+    {"type":"timeseries","title":"Request / error counters","gridPos":{"x":0,"y":4,"w":16,"h":8},"targets":[{"expr":"cloudlet_http_requests_total","legendFormat":"requests"},{"expr":"cloudlet_http_errors_total","legendFormat":"5xx"}]}
+  ],
+  "templating":{"list":[]},
+  "time":{"from":"now-6h","to":"now"}
+}

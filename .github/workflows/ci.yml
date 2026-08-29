@@ -1,0 +1,54 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: cloudlet
+          POSTGRES_PASSWORD: cloudlet
+          POSTGRES_DB: cloudlet
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cloudlet -d cloudlet"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.26.x' }
+      - run: go test ./...
+      - name: Start MinIO
+        run: |
+          docker run -d --name cloudlet-minio \
+            -e MINIO_ROOT_USER=cloudlet \
+            -e MINIO_ROOT_PASSWORD=cloudlet-secret \
+            -p 9000:9000 minio/minio:latest server /data
+          for attempt in {1..30}; do
+            curl --fail --silent http://localhost:9000/minio/health/ready && exit 0
+            sleep 2
+          done
+          docker logs cloudlet-minio
+          exit 1
+      - name: PostgreSQL and S3 integration tests
+        env:
+          CLOUDLET_INTEGRATION_TESTS: '1'
+          CLOUDLET_TEST_DATABASE_URL: postgres://cloudlet:cloudlet@localhost:5432/cloudlet?sslmode=disable
+          CLOUDLET_TEST_S3_ENDPOINT: http://localhost:9000
+          CLOUDLET_TEST_S3_PUBLIC_ENDPOINT: http://localhost:9000
+        run: go test -count=1 -v ./internal/integration
+      - run: go vet ./...
+  frontend:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npm run build
