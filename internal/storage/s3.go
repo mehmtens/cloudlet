@@ -134,15 +134,23 @@ func (s *S3) ensureCORS(ctx context.Context, origin string) error {
 		CORSConfiguration: &types.CORSConfiguration{CORSRules: []types.CORSRule{{AllowedMethods: []string{"GET", "HEAD", "PUT"}, AllowedOrigins: []string{origin}, AllowedHeaders: []string{"*"}, ExposeHeaders: []string{"ETag"}}}},
 	})
 	if err != nil {
-		var apiErr interface{ ErrorCode() string }
-		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NotImplemented" {
-			// Some S3-compatible stores (including certain MinIO modes) do not
-			// implement bucket CORS. Presigned URLs still work; do not block API startup.
+		if optionalCORSError(err) {
+			// Some providers do not implement this API, while least-privilege object
+			// credentials intentionally cannot manage bucket CORS.
 			return nil
 		}
 		return fmt.Errorf("configure bucket CORS: %w", err)
 	}
 	return nil
+}
+
+func optionalCORSError(err error) bool {
+	var apiErr interface{ ErrorCode() string }
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	code := apiErr.ErrorCode()
+	return code == "NotImplemented" || code == "AccessDenied"
 }
 
 func (s *S3) PresignGet(ctx context.Context, key string, lifetime time.Duration) (string, error) {

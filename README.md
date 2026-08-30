@@ -108,7 +108,7 @@ The backend image uses a multi-stage Docker build, runs as an unprivileged user,
 
 `S3_ENDPOINT` is the private backend-to-storage address. `S3_PUBLIC_ENDPOINT` is the browser-reachable address embedded in short-lived presigned upload and download URLs; set it to the public S3/R2 endpoint in deployment.
 
-Some S3-compatible providers do not implement `PutBucketCors`; Cloudlet treats that optional setup response as non-fatal so the API remains available. Direct browser multipart uploads still require the configured public endpoint to allow the origin in its own CORS policy.
+Some S3-compatible providers do not implement `PutBucketCors`, and least-privilege object credentials may not be allowed to call it. Cloudlet treats `NotImplemented` and `AccessDenied` from that optional setup as non-fatal. Direct browser multipart uploads still require the configured public endpoint to allow the origin in its own CORS policy.
 
 The dashboard supports drag-and-drop uploads and tracks upload progress through `XMLHttpRequest`, while preserving the API's cookie/CSRF security model. If a browser cannot reach the public S3 endpoint for a multipart upload, it automatically falls back to the authenticated API upload path.
 
