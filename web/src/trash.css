@@ -172,3 +172,29 @@
 .file-list .file-card:has(.file-select) .file-info {
   padding-left: 0;
 }
+
+.file-grid .file-card:has(.card-actions) {
+  padding-top: 52px;
+}
+
+@media (max-width: 720px) {
+  .file-grid .file-card,
+  .file-grid .folder-card {
+    min-height: 168px;
+  }
+
+  .file-grid .card-actions {
+    right: 10px;
+    left: 10px;
+    justify-content: flex-end;
+    overflow-x: auto;
+  }
+
+  .bulk-toolbar {
+    align-items: stretch;
+  }
+
+  .bulk-toolbar strong {
+    width: 100%;
+  }
+}
