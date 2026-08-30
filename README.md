@@ -14,7 +14,7 @@ A lightweight, self-hosted cloud storage service built with Go, PostgreSQL, and 
 
 ### Roadmap status
 
-The initial MVP feature list is implemented. The larger portfolio plan in `outputs/CLOUDLET_PORTFOY_PLANI.md` is not yet complete: the main remaining items are screenshots/demo video and production deployment validation. No single overall percentage is reported until those items are checked off with evidence.
+The initial MVP feature list is implemented. Production configuration is deployment-ready, but live infrastructure validation is still required. The larger portfolio plan in `outputs/CLOUDLET_PORTFOY_PLANI.md` also still needs screenshots and a demo video. No single overall percentage is reported until those items are checked off with evidence.
 
 ## Local development
 

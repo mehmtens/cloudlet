@@ -1,0 +1,55 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    restart: unless-stopped
+    environment:
+      CLOUDLET_SITE_ADDRESS: ${CLOUDLET_SITE_ADDRESS:?set CLOUDLET_SITE_ADDRESS to the public domain}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:?set S3_PUBLIC_ENDPOINT}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2019/config/"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: ${API_ENV_FILE:-.env.production}
+    depends_on:
+      clamav:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:18080/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+  clamav:
+    build:
+      context: .
+      dockerfile: clamav/Dockerfile
+      args:
+        CLAMAV_STREAM_MAX_LENGTH: ${CLAMAV_STREAM_MAX_LENGTH:-110M}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 1 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  caddy_data:
+  caddy_config:

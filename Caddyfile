@@ -1,4 +1,4 @@
-:8080 {
+{$CLOUDLET_SITE_ADDRESS} {
     encode gzip
     root * /srv
 

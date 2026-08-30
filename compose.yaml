@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: web/Dockerfile
     environment:
+      CLOUDLET_SITE_ADDRESS: ${CLOUDLET_SITE_ADDRESS:-:8080}
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:19000}
     ports:
       - "${WEB_PORT:-18081}:8080"
