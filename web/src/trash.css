@@ -151,3 +151,24 @@
 .file-card:has(.file-select) .file-info {
   padding-left: 17px;
 }
+
+.file-grid .file-select {
+  top: auto;
+  right: 12px;
+  bottom: 12px;
+  left: auto;
+}
+
+.file-grid .file-card:has(.file-select) .file-info {
+  padding-right: 24px;
+  padding-left: 0;
+}
+
+.file-list .file-select {
+  position: static;
+  flex: none;
+}
+
+.file-list .file-card:has(.file-select) .file-info {
+  padding-left: 0;
+}
