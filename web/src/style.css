@@ -3,7 +3,7 @@
 
 @media(max-width:720px){
   .shell{display:block;padding-bottom:72px}
-  aside{position:fixed;z-index:30;right:0;bottom:0;left:0;width:auto;height:68px;padding:7px 8px;border-top:1px solid #293035;border-right:0;background:#111518f2;backdrop-filter:blur(14px);display:flex;align-items:center}
+  aside{position:fixed;z-index:30;right:0;bottom:0;left:0;width:auto;height:68px;padding:7px 8px;border-top:1px solid #293035;border-right:0;background:#111518f2;backdrop-filter:blur(14px);display:flex;flex-direction:row;align-items:center;overflow-x:auto}
   aside .brand,aside .eyebrow,.quota{display:none}
   aside nav{display:flex;flex:1;gap:4px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}
   aside nav::-webkit-scrollbar{display:none}
