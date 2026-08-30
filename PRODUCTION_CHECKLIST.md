@@ -15,6 +15,14 @@ Cloudlet deployment-ready durumdadır. Canlı altyapı doğrulanmadığı için 
 docker compose --env-file .env.production -f compose.production.yaml up -d --build
 ```
 
+Oracle Always Free gibi tek sunuculu kurulumda PostgreSQL'i yalnızca Docker ağına açık şekilde aynı makinede çalıştırın:
+
+```bash
+docker compose --env-file .env.production -f compose.production.yaml -f compose.oracle.yaml up -d --build
+```
+
+Bu kurulumda `DATABASE_URL=postgres://cloudlet:POSTGRES_PASSWORD@postgres:5432/cloudlet?sslmode=disable` kullanılır. PostgreSQL host portuna açılmaz; `POSTGRES_PASSWORD` URL-safe ve rastgele olmalıdır.
+
 API host portuna açılmaz. Caddy tek public giriş noktasıdır. API readiness kontrolü PostgreSQL bağlantısını doğrular; web healthcheck'i Caddy yönetim endpoint'ini container içinden kontrol eder.
 
 ## Canlı doğrulama
