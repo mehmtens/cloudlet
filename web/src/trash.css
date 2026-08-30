@@ -98,6 +98,42 @@
   color: #fff;
 }
 
+.modal {
+  min-width: 0;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.modal h2 {
+  min-width: 0;
+  padding-right: 24px;
+  overflow-wrap: anywhere;
+}
+
+.modal form,
+.modal label,
+.modal .copy-row {
+  min-width: 0;
+}
+
+.public-share .eyebrow {
+  margin-top: 44px;
+}
+
+@media (max-width: 720px) {
+  .modal {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    padding: 22px;
+  }
+
+  .auth-card.public-share {
+    padding: 28px 22px;
+  }
+}
+
 .bulk-toolbar {
   display: flex;
   align-items: center;

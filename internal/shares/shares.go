@@ -52,11 +52,13 @@ type CreatedShare struct {
 type Download struct {
 	URL       string    `json:"url"`
 	ExpiresAt time.Time `json:"expires_at"`
+	FileName  string    `json:"file_name"`
 }
 type storedShare struct {
 	Share
 	PasswordHash *string
 	ObjectKey    string
+	FileName     string
 }
 
 type Repository interface {
@@ -206,7 +208,7 @@ func (s *Service) Download(ctx context.Context, token, password string) (Downloa
 	if err != nil {
 		return Download{}, err
 	}
-	return Download{URL: url, ExpiresAt: time.Now().UTC().Add(lifetime)}, nil
+	return Download{URL: url, ExpiresAt: time.Now().UTC().Add(lifetime), FileName: share.FileName}, nil
 }
 
 type PostgresRepository struct{ db *pgxpool.Pool }
@@ -331,7 +333,7 @@ func (r *PostgresRepository) Revoke(ctx context.Context, ownerID, id uuid.UUID) 
 }
 func (r *PostgresRepository) GetByTokenHash(ctx context.Context, hash []byte) (storedShare, error) {
 	var item storedShare
-	err := r.db.QueryRow(ctx, `SELECT s.id,s.file_id,s.expires_at,s.max_access_starts,s.access_start_count,s.password_hash IS NOT NULL,s.revoked_at,s.created_at,s.password_hash,f.object_key FROM shares s JOIN files f ON f.id=s.file_id WHERE s.token_hash=$1 AND f.deleted_at IS NULL`, hash).Scan(&item.ID, &item.FileID, &item.ExpiresAt, &item.MaxAccessStarts, &item.AccessStartCount, &item.PasswordProtected, &item.RevokedAt, &item.CreatedAt, &item.PasswordHash, &item.ObjectKey)
+	err := r.db.QueryRow(ctx, `SELECT s.id,s.file_id,s.expires_at,s.max_access_starts,s.access_start_count,s.password_hash IS NOT NULL,s.revoked_at,s.created_at,s.password_hash,f.object_key,f.original_name FROM shares s JOIN files f ON f.id=s.file_id WHERE s.token_hash=$1 AND f.deleted_at IS NULL`, hash).Scan(&item.ID, &item.FileID, &item.ExpiresAt, &item.MaxAccessStarts, &item.AccessStartCount, &item.PasswordProtected, &item.RevokedAt, &item.CreatedAt, &item.PasswordHash, &item.ObjectKey, &item.FileName)
 	return item, err
 }
 func (r *PostgresRepository) Consume(ctx context.Context, id uuid.UUID) error {

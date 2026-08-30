@@ -17,6 +17,19 @@ async function api(path, options = {}) {
 }
 const formatBytes = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(2)} GB`;
 
+async function saveDownload(url, name = 'cloudlet-dosyasi') {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Dosya indirilemedi.');
+  const objectURL = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = objectURL;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectURL), 1000);
+}
+
 export function App() {
   const [files, setFiles] = useState([]), [folders, setFolders] = useState([]), [folder, setFolder] = useState(null), [folderPath, setFolderPath] = useState([]);
   const [usage, setUsage] = useState({used_bytes: 0, quota_bytes: 1}), [signedIn, setSignedIn] = useState(true);
@@ -44,7 +57,7 @@ export function App() {
   const openFolder = item => { setFolder(item); setFolderPath(current => [...current, item]); };
   const navigatePath = index => { const next = index < 0 ? null : folderPath[index]; setFolder(next); setFolderPath(index < 0 ? [] : folderPath.slice(0, index + 1)); };
   const moveToTrash = async file => { try { await api(`/v1/files/${file.id}`, {method: 'DELETE'}); await load(folder, section); } catch (e) { setError(e.message); } };
-  const downloadFile = async (file, shared = false) => { try { const result = await api(`${shared ? '/v1/shared-with-me' : '/v1/files'}/${shared ? file.id + '/download' : file.id + '/download'}`); window.open(result.url, '_blank', 'noopener,noreferrer'); } catch (e) { setError(e.message); } };
+  const downloadFile = async (file, shared = false) => { try { const result = await api(`${shared ? '/v1/shared-with-me' : '/v1/files'}/${shared ? file.id + '/download' : file.id + '/download'}`); await saveDownload(result.url, file.name); } catch (e) { setError(e.message); } };
   const renameFile = async file => { const name = window.prompt('Yeni dosya adı', file.name); if (!name?.trim() || name.trim() === file.name) return; try { await api(`/v1/files/${file.id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: name.trim()})}); await load(folder, section); } catch (e) { setError(e.message); } };
   const toggleSelected = id => setSelected(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
   const bulkTrash = async () => { if (!selected.length || !window.confirm(`${selected.length} dosya çöp kutusuna taşınsın mı?`)) return; try { await api('/v1/files/bulk/trash', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids: selected})}); setSelected([]); await load(folder, section); } catch (e) { setError(e.message); } };
@@ -143,7 +156,7 @@ function TrashActions({onRestore, onDelete}) {
 function VersionsDialog({file, onClose, onRestored}) {
   const [versions, setVersions] = useState([]), [error, setError] = useState('');
   useEffect(() => { api(`/v1/files/${file.id}/versions`).then(result => setVersions(result.versions || result)).catch(e => setError(e.message)); }, [file.id]);
-  const download = async version => { try { const result = await api(`/v1/files/${file.id}/versions/${version.id}/download`); window.open(result.url, '_blank', 'noopener,noreferrer'); } catch (e) { setError(e.message); } };
+  const download = async version => { try { const result = await api(`/v1/files/${file.id}/versions/${version.id}/download`); await saveDownload(result.url, file.name); } catch (e) { setError(e.message); } };
   const remove = async version => { if (!window.confirm('Bu eski sürüm kalıcı olarak silinsin mi?')) return; try { await api(`/v1/files/${file.id}/versions/${version.id}`, {method: 'DELETE'}); setVersions(current => current.filter(item => item.id !== version.id)); } catch (e) { setError(e.message); } };
   const restore = async version => { try { await api(`/v1/files/${file.id}/versions/${version.id}/restore`, {method: 'POST'}); onRestored(); } catch (e) { setError(e.message); } };
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="versions-title"><button className="modal-close" onClick={onClose}><X size={18}/></button><div className="eyebrow">DOSYA GEÇMİŞİ</div><h2 id="versions-title">{file.name}</h2>{error && <div className="error">{error}</div>}<div className="version-list">{versions.map(version => <div className="version-row" key={version.id}><div><strong>{version.is_current ? 'Güncel sürüm' : 'Önceki sürüm'}</strong><span>{formatBytes(version.size_bytes)} · {new Date(version.created_at).toLocaleString('tr-TR')}</span></div><div><button onClick={() => download(version)} title="İndir"><Download size={15}/></button>{!version.is_current && <><button onClick={() => restore(version)} title="Bu sürümü geri yükle"><RotateCcw size={15}/></button><button onClick={() => remove(version)} title="Sürümü sil"><Trash2 size={15}/></button></>}</div></div>)}{!versions.length && !error && <p>Henüz sürüm geçmişi bulunmuyor.</p>}</div></section></div>;
@@ -167,5 +180,12 @@ function MoveDialog({file, files, onClose, onMoved}) {
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="move-title"><button className="modal-close" onClick={onClose}><X size={18}/></button><div className="eyebrow">DOSYAYI TAŞI</div><h2 id="move-title">{items.length === 1 ? items[0].name : `${items.length} dosyayı taşı`}</h2><form onSubmit={move}><label>Hedef klasör<select value={folderID} onChange={e => setFolderID(e.target.value)}><option value="">Kök dizin</option>{folders.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{error && <div className="error">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Taşınıyor…' : 'Taşı'}</button></form></section></div>;
 }
 
+function PublicShare({token}) {
+  const [password, setPassword] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const download = async event => { event.preventDefault(); setBusy(true); setError(''); try { const result = await api(`/v1/public/shares/${encodeURIComponent(token)}/download`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password})}); await saveDownload(result.url, result.file_name); } catch (requestError) { setError(requestError.code === 'share_password_required' ? 'Bu bağlantı parola korumalı.' : requestError.code === 'invalid_share_password' ? 'Bağlantı parolası yanlış.' : requestError.message); } finally { setBusy(false); } };
+  return <div className="auth-shell"><section className="auth-card public-share"><div className="brand"><span className="mark">C</span><span>cloudlet</span></div><div className="eyebrow">PUBLIC DOSYA PAYLAŞIMI</div><h1>Dosya seninle<br/><em>paylaşıldı.</em></h1><p>Cloudlet hesabı açmadan dosyayı indirebilirsin.</p><form onSubmit={download}><label>Bağlantı parolası <small>(varsa)</small><input value={password} onChange={event => setPassword(event.target.value)} type="password" placeholder="Parola yoksa boş bırak"/></label>{error && <div className="error">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Hazırlanıyor…' : 'Dosyayı indir'}</button></form></section></div>;
+}
+
 const rootElement = document.getElementById('root');
-if (rootElement) createRoot(rootElement).render(<App/>);
+const publicShareToken = window.location.pathname.match(/^\/s\/([^/]+)\/?$/)?.[1];
+if (rootElement) createRoot(rootElement).render(publicShareToken ? <PublicShare token={decodeURIComponent(publicShareToken)}/> : <App/>);
