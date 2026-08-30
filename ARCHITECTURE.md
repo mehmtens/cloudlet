@@ -36,3 +36,5 @@ PostgreSQL ── River workers
 ## Data ownership
 
 PostgreSQL stores identity, hierarchy, permissions, quotas, checksums, versions, and thumbnail references. S3/MinIO stores immutable file and thumbnail bytes. A version row is the source of truth for each object; deleting a version deletes its object and returns its bytes to the owner quota.
+
+The migration-derived table model, foreign-key cardinalities, delete actions, constraints, and data dictionary are documented in [`ER_DIAGRAM.md`](ER_DIAGRAM.md).

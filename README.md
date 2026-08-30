@@ -14,7 +14,7 @@ A lightweight, self-hosted cloud storage service built with Go, PostgreSQL, and 
 
 ### Roadmap status
 
-The initial MVP feature list is implemented. The larger portfolio plan in `outputs/CLOUDLET_PORTFOY_PLANI.md` is not yet complete: the main remaining items are the ER diagram, screenshots/demo video, and production deployment validation. No single overall percentage is reported until those items are checked off with evidence.
+The initial MVP feature list is implemented. The larger portfolio plan in `outputs/CLOUDLET_PORTFOY_PLANI.md` is not yet complete: the main remaining items are screenshots/demo video and production deployment validation. No single overall percentage is reported until those items are checked off with evidence.
 
 ## Local development
 
@@ -98,7 +98,7 @@ The Playwright suite exercises registration, folder creation, API-backed upload,
 
 The API contract is documented in [`openapi.yaml`](openapi.yaml) and can be loaded into Swagger UI or another OpenAPI client.
 
-The system flow, storage boundaries, and security boundaries are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+The system flow, storage boundaries, and security boundaries are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md). The migration-derived PostgreSQL model, relationship cardinalities, deletion behavior, and data dictionary are documented in [`ER_DIAGRAM.md`](ER_DIAGRAM.md).
 
 GitHub Actions runs backend tests/vet and the Vite production build. Prometheus is included in Compose on port `19090` and scrapes the API metrics endpoint; Grafana is available on port `13000` with a pre-provisioned Cloudlet dashboard.
 
