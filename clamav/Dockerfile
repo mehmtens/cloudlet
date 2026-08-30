@@ -1,4 +1,4 @@
-FROM clamav/clamav:stable
+FROM clamav/clamav:1.5.4-debian13-slim
 
 USER root
 ARG CLAMAV_STREAM_MAX_LENGTH=110M
