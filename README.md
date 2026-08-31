@@ -1,20 +1,41 @@
 # Cloudlet
 
-A lightweight, self-hosted cloud storage service built with Go, PostgreSQL, and S3-compatible object storage.
+**A production-deployed, self-hosted cloud drive built with Go, React, PostgreSQL, and S3-compatible object storage.**
 
-## Initial roadmap
+[Live application](https://92-5-187-43.sslip.io/) · [API documentation](https://92-5-187-43.sslip.io/docs/) · [OpenAPI contract](openapi.yaml) · [Architecture](ARCHITECTURE.md)
 
-- File upload and download
-- Authentication
-- PostgreSQL metadata storage
-- S3-compatible object storage
-- Presigned URLs
-- Multipart uploads
-- File sharing, folders, and versioning
+Cloudlet provides private file storage, folders, version history, resumable uploads, malware scanning, account-to-account sharing, and public links in a responsive web interface. The production deployment runs on Oracle Cloud, stores file metadata in PostgreSQL, and keeps private objects in Cloudflare R2.
 
-### Roadmap status
+## Highlights
 
-The initial MVP feature list is implemented. Production configuration is deployment-ready, but live infrastructure validation is still required. The larger portfolio plan in `outputs/CLOUDLET_PORTFOY_PLANI.md` also still needs screenshots and a demo video. No single overall percentage is reported until those items are checked off with evidence.
+- Secure cookie authentication, rotating refresh sessions, CSRF protection, email verification, password recovery, and TOTP two-factor authentication
+- Direct and resumable multipart uploads using short-lived presigned URLs
+- Private folders, search, bulk operations, trash retention, thumbnails, and up to 20 versions per active file
+- Registered-user sharing with read/write permissions and anonymous public links with optional passwords
+- ClamAV scanning that fails closed before uploaded objects become available
+- Per-user 5 GiB quotas with transactional reservations for concurrent uploads
+- OpenAPI-documented REST API with route-contract parity validation
+- Health/readiness endpoints, structured audit records, Prometheus metrics, background retention jobs, and Docker Compose production deployment
+- Responsive desktop and mobile interface with accessible controls and reduced-motion support
+
+## Production architecture
+
+```text
+Browser
+  │ HTTPS
+  ▼
+Caddy / React SPA ──► Go REST API ──► PostgreSQL
+                          │              metadata, users,
+                          │              quotas, jobs
+                          ├──► Cloudflare R2
+                          │    private file objects
+                          ├──► ClamAV
+                          │    upload scanning
+                          └──► Brevo SMTP
+                               transactional email
+```
+
+The live stack is containerized on an ARM64 Oracle Cloud instance. Caddy terminates TLS and proxies same-origin API traffic; objects remain private and are accessed only through short-lived presigned operations.
 
 ## Local development
 
